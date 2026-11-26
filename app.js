@@ -636,18 +636,33 @@ function submitPatrolQuery() {
 }
 
 function getPatrolGrade(className) {
-    const n = parseInt(String(className || '').replace(/\D/g, ''), 10);
+    const name = String(className || '').trim();
+
+    // 一般班級：701～799、801～899、901～999
+    const n = parseInt(name.replace(/\D/g, ''), 10);
     if (n >= 701 && n <= 799) return 7;
     if (n >= 801 && n <= 899) return 8;
     if (n >= 901 && n <= 999) return 9;
+
+    // 特殊班級依名稱前綴歸入年級
+    if (/^7(?:資源|資優)/.test(name)) return 7;
+    if (/^8(?:資源|資優|學扶)/.test(name)) return 8;
+    if (/^9(?:資源|資優)/.test(name)) return 9;
+
+    // 特教班依指定放在九年級區塊
+    if (name === '特教班') return 9;
     return 0;
 }
 
 function formatPatrolClassName(className, grade) {
-    const n = parseInt(String(className || '').replace(/\D/g, ''), 10);
-    if (!Number.isFinite(n)) return className;
-    const gradeText = grade === 7 ? '七年' : grade === 8 ? '八年' : '九年';
-    return `${gradeText}${n % 100}班`;
+    const name = String(className || '').trim();
+    const n = parseInt(name.replace(/\D/g, ''), 10);
+
+    if (n >= 701 && n <= 999) {
+        const gradeText = grade === 7 ? '七年' : grade === 8 ? '八年' : '九年';
+        return `${gradeText}${n % 100}班`;
+    }
+    return name;
 }
 
 function displayPatrolSchedule(day, period) {
@@ -669,9 +684,32 @@ function displayPatrolSchedule(day, period) {
     const grades = [7, 8, 9];
     const gradeTitles = { 7: '七年級', 8: '八年級', 9: '九年級' };
     const ordered = {};
-    grades.forEach(g => ordered[g] = [...gradeBuckets[g].entries()].sort((a, b) =>
-        (parseInt(a[0].replace(/\D/g, ''), 10) || 0) - (parseInt(b[0].replace(/\D/g, ''), 10) || 0)
-    ));
+    const specialOrder = {
+        7: ['7資源', '7資優'],
+        8: ['8資源', '8資優', '8學扶'],
+        9: ['特教班', '9資源', '9資優']
+    };
+
+    grades.forEach(g => {
+        ordered[g] = [...gradeBuckets[g].entries()].sort((a, b) => {
+            const aName = a[0];
+            const bName = b[0];
+            const aNum = parseInt(aName.replace(/\D/g, ''), 10);
+            const bNum = parseInt(bName.replace(/\D/g, ''), 10);
+            const aRegular = Number.isFinite(aNum) && Math.floor(aNum / 100) === g;
+            const bRegular = Number.isFinite(bNum) && Math.floor(bNum / 100) === g;
+
+            if (aRegular && bRegular) return aNum - bNum;
+            if (aRegular) return -1;
+            if (bRegular) return 1;
+
+            const order = specialOrder[g] || [];
+            const ai = order.indexOf(aName);
+            const bi = order.indexOf(bName);
+            return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi)
+                || aName.localeCompare(bName, 'zh-TW');
+        });
+    });
 
     let table = '<table class="schedule-table patrol-table"><thead><tr>';
     grades.forEach(g => table += `<th class="patrol-grade-head grade-${g}">${gradeTitles[g]}班級</th><th class="patrol-grade-head grade-${g}">科目與教師</th>`);
